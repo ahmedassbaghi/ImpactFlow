@@ -215,3 +215,18 @@ pytest -q
 cd apps/frontend
 npx tsc --noEmit
 ```
+
+---
+
+## Autors
+
+- Ahmed Assbaghi
+- Francisco Ruiz
+- Oriol Ribas
+- Ivan Rodríguez
+
+---
+
+## Llicència
+
+Aquest projecte es distribueix sota la llicència [Apache License 2.0](LICENSE).
