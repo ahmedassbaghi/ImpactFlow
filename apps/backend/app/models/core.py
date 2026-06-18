@@ -1,0 +1,447 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Optional
+from uuid import uuid4
+
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+
+
+def _uuid() -> str:
+    return uuid4().hex
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    logo_url: Mapped[Optional[str]] = mapped_column(String)
+    plan: Mapped[str] = mapped_column(String, default="free")
+    participant_code_pattern: Mapped[Optional[str]] = mapped_column(
+        String, default="{abbr}-{year}-{seq:03}"
+    )
+    landing_content: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class School(Base):
+    __tablename__ = "schools"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    abbreviation: Mapped[str] = mapped_column(String, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "abbreviation"),)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    full_name: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    organization: Mapped[Organization] = relationship()
+
+    __table_args__ = (UniqueConstraint("organization_id", "username"),)
+
+
+class Program(Base):
+    __tablename__ = "programs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    program_type: Mapped[str] = mapped_column(String, default="other")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Optional[date]] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AcademicYear(Base):
+    __tablename__ = "academic_years"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "title"),)
+
+
+class UserParticipantAssignment(Base):
+    __tablename__ = "user_participant_assignments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "participant_id"),)
+
+
+class Participant(Base):
+    __tablename__ = "participants"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    school_id: Mapped[str] = mapped_column(ForeignKey("schools.id"), nullable=False)
+    code: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    first_name: Mapped[str] = mapped_column(String, nullable=False)
+    birth_year: Mapped[Optional[int]] = mapped_column(Integer)
+    gender: Mapped[str] = mapped_column(String, default="unknown")
+    nationality: Mapped[Optional[str]] = mapped_column(String)
+    enrollment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    consent_given: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_control_group: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_grade_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    current_grade_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProgramEnrollment(Base):
+    """Explicit many-to-many: participant enrolled in a program."""
+    __tablename__ = "program_enrollments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    enrolled_at: Mapped[date] = mapped_column(Date, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    __table_args__ = (UniqueConstraint("program_id", "participant_id", "academic_year_id"),)
+
+
+class ParticipantGradeHistory(Base):
+    __tablename__ = "participant_grade_history"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    academic_year_id: Mapped[str] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    grade_key: Mapped[str] = mapped_column(String, nullable=False)
+    grade_label: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="enrolled")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("participant_id", "academic_year_id"),)
+
+
+class BaselineAssessment(Base):
+    __tablename__ = "baseline_assessments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    assessed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reading_level: Mapped[Optional[int]] = mapped_column(Integer)
+    math_level: Mapped[Optional[int]] = mapped_column(Integer)
+    comprehension_level: Mapped[Optional[int]] = mapped_column(Integer)
+    attention_level: Mapped[Optional[int]] = mapped_column(Integer)
+    memory_level: Mapped[Optional[int]] = mapped_column(Integer)
+    autonomy_level: Mapped[Optional[int]] = mapped_column(Integer)
+    peer_interaction: Mapped[Optional[int]] = mapped_column(Integer)
+    group_work: Mapped[Optional[int]] = mapped_column(Integer)
+    emotional_regulation: Mapped[Optional[int]] = mapped_column(Integer)
+    language_fluency: Mapped[Optional[int]] = mapped_column(Integer)
+    cultural_adaptation: Mapped[Optional[int]] = mapped_column(Integer)
+    ipi_baseline: Mapped[Optional[float]] = mapped_column(Float)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    __table_args__ = (UniqueConstraint("participant_id", "program_id"),)
+
+
+class PeriodicAssessment(Base):
+    __tablename__ = "periodic_assessments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    assessed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period_label: Mapped[str] = mapped_column(String, nullable=False)
+    reading_level: Mapped[Optional[int]] = mapped_column(Integer)
+    math_level: Mapped[Optional[int]] = mapped_column(Integer)
+    comprehension_level: Mapped[Optional[int]] = mapped_column(Integer)
+    attention_level: Mapped[Optional[int]] = mapped_column(Integer)
+    memory_level: Mapped[Optional[int]] = mapped_column(Integer)
+    autonomy_level: Mapped[Optional[int]] = mapped_column(Integer)
+    peer_interaction: Mapped[Optional[int]] = mapped_column(Integer)
+    group_work: Mapped[Optional[int]] = mapped_column(Integer)
+    emotional_regulation: Mapped[Optional[int]] = mapped_column(Integer)
+    language_fluency: Mapped[Optional[int]] = mapped_column(Integer)
+    cultural_adaptation: Mapped[Optional[int]] = mapped_column(Integer)
+    ipi_score: Mapped[float] = mapped_column(Float, nullable=False)
+    ipi_delta_vs_baseline: Mapped[Optional[float]] = mapped_column(Float)
+    ipi_delta_vs_previous: Mapped[Optional[float]] = mapped_column(Float)
+    predicted_next_ipi: Mapped[Optional[float]] = mapped_column(Float)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float)
+    risk_level: Mapped[Optional[str]] = mapped_column(String)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    professional_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False)
+    session_time: Mapped[Optional[str]] = mapped_column(String)  # HH:MM (24h)
+    session_type: Mapped[str] = mapped_column(String, default="group")
+    duration_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    notes_ai_summary: Mapped[Optional[str]] = mapped_column(Text)
+    notes_sentiment: Mapped[Optional[float]] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SessionObservation(Base):
+    __tablename__ = "session_observations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    academic_score: Mapped[Optional[int]] = mapped_column(Integer)
+    cognitive_score: Mapped[Optional[int]] = mapped_column(Integer)
+    social_score: Mapped[Optional[int]] = mapped_column(Integer)
+    integration_score: Mapped[Optional[int]] = mapped_column(Integer)
+    qualitative_note: Mapped[Optional[str]] = mapped_column(Text)
+    qualitative_note_parsed_tags: Mapped[Optional[str]] = mapped_column(Text)
+    mood_indicator: Mapped[Optional[str]] = mapped_column(String)
+    # Extended behavioural signals (bespoke session-registration model).
+    arrival_mood: Mapped[Optional[str]] = mapped_column(String)
+    departure_mood: Mapped[Optional[str]] = mapped_column(String)
+    verbal_participation: Mapped[Optional[int]] = mapped_column(Integer)  # 0..3
+    time_on_task_pct: Mapped[Optional[int]] = mapped_column(Integer)      # 0..100
+    flag_alert: Mapped[bool] = mapped_column(Boolean, default=False)
+    self_eval_emoji: Mapped[Optional[str]] = mapped_column(String)
+    # Volunteer gut-feel vs last session: progressed | similar | step_back
+    volunteer_progress_sense: Mapped[Optional[str]] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("session_id", "participant_id"),)
+
+
+class SessionActivityTag(Base):
+    """Org-scoped catalog of activity labels (what was worked on in a session)."""
+    __tablename__ = "session_activity_tags"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String)
+    # Comma-separated list of dimensions this activity primarily touches:
+    # any subset of {"academic","cognitive","social","integration"}.
+    dimensions: Mapped[Optional[str]] = mapped_column(String)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "slug"),)
+
+
+class SessionActivityTagLink(Base):
+    """M2M Session ↔ Activity tag."""
+    __tablename__ = "session_activity_tag_links"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    tag_id: Mapped[str] = mapped_column(
+        ForeignKey("session_activity_tags.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("session_id", "tag_id"),)
+
+
+class SessionGoalProgress(Base):
+    """Per-observation progress on an individualized micro-goal (GAS scale -2..+2)."""
+    __tablename__ = "session_goal_progress"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_observation_id: Mapped[str] = mapped_column(
+        ForeignKey("session_observations.id", ondelete="CASCADE"), nullable=False
+    )
+    micro_goal_id: Mapped[str] = mapped_column(
+        ForeignKey("micro_goals.id", ondelete="CASCADE"), nullable=False
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False)  # -2..+2
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("session_observation_id", "micro_goal_id"),)
+
+
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    session_id: Mapped[Optional[str]] = mapped_column(ForeignKey("sessions.id"))
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class TeachingAssignment(Base):
+    __tablename__ = "teaching_assignments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[str] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    school_id: Mapped[Optional[str]] = mapped_column(ForeignKey("schools.id"), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str] = mapped_column(String, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "participant_id", "program_id", "academic_year_id"),
+    )
+
+
+class ImportLog(Base):
+    __tablename__ = "import_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    imported_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    source_filename: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="completed")
+    raw_input_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class MicroGoal(Base):
+    __tablename__ = "micro_goals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    dimension: Mapped[str] = mapped_column(String, nullable=False)
+    difficulty: Mapped[int] = mapped_column(Integer, default=1)
+    points: Mapped[int] = mapped_column(Integer, default=10)
+    target_date: Mapped[Optional[date]] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MicroGoalCompletion(Base):
+    __tablename__ = "micro_goal_completions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    micro_goal_id: Mapped[str] = mapped_column(ForeignKey("micro_goals.id", ondelete="CASCADE"), nullable=False)
+    session_id: Mapped[Optional[str]] = mapped_column(ForeignKey("sessions.id"))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    verified_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class ProgramMicroGoal(Base):
+    __tablename__ = "program_micro_goals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    dimension: Mapped[str] = mapped_column(String, nullable=False)
+    difficulty: Mapped[int] = mapped_column(Integer, default=1)
+    target_date: Mapped[Optional[date]] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProgramMicroGoalCompletion(Base):
+    __tablename__ = "program_micro_goal_completions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    program_micro_goal_id: Mapped[str] = mapped_column(
+        ForeignKey("program_micro_goals.id", ondelete="CASCADE"), nullable=False
+    )
+    session_id: Mapped[Optional[str]] = mapped_column(ForeignKey("sessions.id"))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    verified_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    program_id: Mapped[Optional[str]] = mapped_column(ForeignKey("programs.id"))
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    report_type: Mapped[str] = mapped_column(String, nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    content_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="ready")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
